@@ -188,12 +188,12 @@ while cap.isOpened():
         # roiAttention[np.where(attentionIconMask)] = 0
         # roiAttention += attentionIcon
 
-    # Ekranda POSE Gösterme
+    # POSE SHOW
     # mpDraw.draw_landmarks(img, poseResults.pose_landmarks, mpPose.POSE_CONNECTIONS,
     #                       mpDraw.DrawingSpec(color=(245, 117, 66), thickness=2, circle_radius=4),
     #                       mpDraw.DrawingSpec(color=(245, 66, 230), thickness=2, circle_radius=2))
 
-
+    # HAND SHOW
     # if handResults.multi_hand_landmarks and faceMeshResults.multi_face_landmarks:
     #     for i in range(0, 20):
     #         pLms = handResults.multi_hand_landmarks[0].landmark[i]

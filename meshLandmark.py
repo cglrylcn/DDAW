@@ -10,7 +10,16 @@ mpFaceMesh = mp.solutions.face_mesh
 faceMesh = mpFaceMesh.FaceMesh()
 drawSpec = mpDraw.DrawingSpec(thickness=1, circle_radius=1)
 mpPose = mp.solutions.pose
-Pose = mpPose.Pose()
+Pose = mpPose.Pose(min_detection_confidence=0.7,
+               min_tracking_confidence=0.7)
+mpHand = mp.solutions.hands
+Hand = mpHand.Hands()
+
+def point_xy(img1, point1):
+    h, w = img1.shape[:2]
+    p1_x = int(point1.x * w)
+    p1_y = int(point1.y * h)
+    return p1_x, p1_y
 
 
 def dist2p(img1, point1, point2):
@@ -21,7 +30,7 @@ def dist2p(img1, point1, point2):
     p2_x = int(point2.x * w)
     p2_y = int(point2.y * h)
     p2_pix = p2_x, p2_y
-    if 0 > p1_x > 640 or 0 > p2_x > 640 or 0 > p1_y > 480 or 0 > p2_y > 480:
+    if 0 > p1_x or p1_x > 640 or 0 > p2_x or p2_x > 640 or 0 > p1_y or p1_y > 480 or 0 > p2_y or p2_y > 480:
         dist = 0
     else:
         dist = dis.euclidean(p1_pix, p2_pix)
@@ -74,9 +83,9 @@ cap = cv2.VideoCapture(0)
 # cap.set(3, 320)
 # cap.set(4, 240)
 
-cv2.namedWindow('Image')
-cv2.createTrackbar('Min', 'Image', 0, 468, nothing)
-cv2.createTrackbar('Max', 'Image', 0, 468, nothing)
+cv2.namedWindow('DDAW')
+cv2.createTrackbar('Min', 'DDAW', 0, 468, nothing)
+cv2.createTrackbar('Max', 'DDAW', 0, 468, nothing)
 
 startTime = 0
 writeOnceSmoke = 0
@@ -96,6 +105,11 @@ smokeFrame = 0
 smokeCount = 0
 woSmokeFrame = 0
 
+distPx_IFT2L = 0
+distPx_IFT2RE = 0
+distPx_IFT2LE = 0
+distPx_LIL2LOL = 0
+
 while cap.isOpened():
     globalTime = time.time()
     timeStamp = datetime.datetime.fromtimestamp(globalTime).strftime('%d-%m-%Y_%H:%M:%S')
@@ -108,10 +122,11 @@ while cap.isOpened():
     imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     faceMeshResults = faceMesh.process(imgRGB)
     poseResults = Pose.process(imgRGB)
+    handResults = Hand.process(imgRGB)
     imgRGB.flags.writeable = True
     #Yuzdeki noktaları gormek icin
-    minVal = cv2.getTrackbarPos('Min', 'Image')
-    maxVal = cv2.getTrackbarPos('Max', 'Image')
+    minVal = cv2.getTrackbarPos('Min', 'DDAW')
+    maxVal = cv2.getTrackbarPos('Max', 'DDAW')
 
     if faceMeshResults.multi_face_landmarks:
         # 468-473 Right Irıs
@@ -140,6 +155,8 @@ while cap.isOpened():
         rightInnerLid = faceMeshResults.multi_face_landmarks[0].landmark[382]
         rightOuterLid = faceMeshResults.multi_face_landmarks[0].landmark[359]
         rightLidRatio = ratio2dist(img, rightInnerLid, rightOuterLid, rightUpperLid, rightBottomLid)
+
+        distPx_LIL2LOL = dist2p(img, leftInnerLid, leftOuterLid) #Distance from left inner lid to left outerlid
 
         # cv2.putText(img, str((leftLidRatio+rightLidRatio)/2), (0, 60), cv2.FONT_HERSHEY_PLAIN, 1, (255, 0, 255), 1)
         # cv2.putText(img, 'Uyuyorsun', (40, 60), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 255), 1)
@@ -172,102 +189,130 @@ while cap.isOpened():
         # roiAttention += attentionIcon
 
     # Ekranda POSE Gösterme
-    mpDraw.draw_landmarks(img, poseResults.pose_landmarks, mpPose.POSE_CONNECTIONS,
-                          mpDraw.DrawingSpec(color=(245, 117, 66), thickness=2, circle_radius=4),
-                          mpDraw.DrawingSpec(color=(245, 66, 230), thickness=2, circle_radius=2))
+    # mpDraw.draw_landmarks(img, poseResults.pose_landmarks, mpPose.POSE_CONNECTIONS,
+    #                       mpDraw.DrawingSpec(color=(245, 117, 66), thickness=2, circle_radius=4),
+    #                       mpDraw.DrawingSpec(color=(245, 66, 230), thickness=2, circle_radius=2))
+
+
+    # if handResults.multi_hand_landmarks and faceMeshResults.multi_face_landmarks:
+    #     for i in range(0, 20):
+    #         pLms = handResults.multi_hand_landmarks[0].landmark[i]
+    #         x = int(pLms.x * width)
+    #         y = int(pLms.y * height)
+    #         cv2.circle(img, (x, y), 1, (100, 100, 0), -10)
+    #         cv2.putText(img, str(i), (x, y), cv2.FONT_HERSHEY_PLAIN, 2, (0, 255, 0), 2)
+
+
 
     ##########################
-    if poseResults.pose_landmarks and faceMeshResults.multi_face_landmarks:
-        for i in range(0, 20):
-            pLms = poseResults.pose_landmarks.landmark[i]
-            x = int(pLms.x * width)
-            y = int(pLms.y * height)
-            cv2.circle(img, (x, y), 1, (100, 100, 0), -10)
-            cv2.putText(img, str(i), (x, y), cv2.FONT_HERSHEY_PLAIN, 2, (0, 255, 0), 2)
-            # print(i, x, y)
+    if poseResults.pose_landmarks and faceMeshResults.multi_face_landmarks and handResults.multi_hand_landmarks:
+        # for i in range(0, 20):
+        #     pLms = poseResults.pose_landmarks.landmark[i]
+        #     x = int(pLms.x * width)
+        #     y = int(pLms.y * height)
+        #     cv2.circle(img, (x, y), 1, (100, 100, 0), -10)
+        #     cv2.putText(img, str(i), (x, y), cv2.FONT_HERSHEY_PLAIN, 2, (0, 255, 0), 2)
+        #     print(i, x, y)
+
+
         # PHONE DETECTION
-        rightEar = faceMeshResults.multi_face_landmarks[0].landmark[93]  # Sağ Kulak
-        leftEar = faceMeshResults.multi_face_landmarks[0].landmark[323]  # Sol Kulak
-        leftWrist = poseResults.pose_landmarks.landmark[15]  # Sol Bilek
-        rightWrist = poseResults.pose_landmarks.landmark[16]  # Sağ Bilek
+        rightEar = faceMeshResults.multi_face_landmarks[0].landmark[93]
+        leftEar = faceMeshResults.multi_face_landmarks[0].landmark[323]
+        leftWrist = poseResults.pose_landmarks.landmark[15]
+        rightWrist = poseResults.pose_landmarks.landmark[16]
         leftIndex = poseResults.pose_landmarks.landmark[19]
         rightIndex = poseResults.pose_landmarks.landmark[20]
-        distPx_RI2E = dist2p(img, rightIndex, rightEar)
-        distPx_LI2E = dist2p(img, leftIndex, leftEar)
-        distPx_LE2RE = dist2p(img, leftEar, rightEar)
-        # SMOKE DETECTION
+        indexFingerTip = handResults.multi_hand_landmarks[0].landmark[8]
         bottomLip = faceMeshResults.multi_face_landmarks[0].landmark[14]
         leftIndex = poseResults.pose_landmarks.landmark[19]
         rightIndex = poseResults.pose_landmarks.landmark[20]
+
+        distPx_RI2RE = dist2p(img, rightIndex, rightEar)
+        distPx_LI2LE = dist2p(img, leftIndex, leftEar)
+        distPx_LE2RE = dist2p(img, leftEar, rightEar)
+        distPx_IFT2RE = dist2p(img, indexFingerTip, rightEar)
+        distPx_IFT2LE = dist2p(img, indexFingerTip, leftEar)
+        distPx_IFT2L = dist2p(img, indexFingerTip, bottomLip)
         distPx_RI2L = dist2p(img, bottomLip, rightIndex)
         distPx_LI2L = dist2p(img, bottomLip, leftIndex)
 
-        # if (distPx_RI2L < distPx_RI2E or distPx_LI2L < distPx_LI2E) and (distPx_RI2L < 250 or distPx_LI2L < 250):
-        if ((0 < distPx_RI2E < distPx_LE2RE) and  distPx_RI2E < distPx_RI2L) or ((0 < distPx_LI2E < distPx_LE2RE) and  distPx_LI2E < distPx_LI2L) :
-            phoneFrame += 1
-            woPhoneFrame = 0
-            if phoneFrame > 20:
-                phoneCount += 1
-                phoneFrame = 0
-        else:
-            woPhoneFrame += 1
-        # print(distPx_RI2E, distPx_LI2E, distPx_LE2RE, "   " ,phoneFrame, woPhoneFrame)
+    else:
+        distPx_RI2RE = 0
+        distPx_LI2LE = 0
+        distPx_LE2RE = 0
+        distPx_IFT2RE = 0
+        distPx_IFT2LE = 0
+        distPx_IFT2L = 0
+        distPx_RI2L = 0
+        distPx_LI2L = 0
 
-        #WITHOUT PHONE FRAME IS BIGGER THAN LIMIT DRIVER IS NOT TALKING
-        if woPhoneFrame > 80:
-            phoneFrame = 0
-            phoneCount = 0
-            writeOncePhone = 0
-
-        if phoneCount > 2:
-            roiPhone = img[-size - 260:-260, -size - 10:-10]
-            roiPhone[np.where(phoneIconMask)] = 0
-            roiPhone += phoneIcon
-            if writeOncePhone == 0:
-                writeOncePhone = 1
-                fileName = "phoneBreach_" + str(timeStamp)
-                filePath = "breachs/phone/" + fileName + ".jpg"
-                cv2.imwrite(filePath, img)
-                breachtext = "Phone Breach!"
-                log = 'breachs/breachs.txt'
-                logfile = open(log, "a")
-                with open(log, 'a') as logfile:
-                    logfile.write(logTimeStamp+ " " + breachtext + '\n')
-
-        print(distPx_RI2L, distPx_RI2E, distPx_LI2L, distPx_LI2E, "SMOKE: ", smokeFrame, woSmokeFrame)
-        # print(distPx_RI2E, distPx_LI2E, distPx_LE2RE, distPx_LI2E, "PHONE: " ,phoneFrame, woPhoneFrame)
-        print("SMOKE: ", smokeFrame, woSmokeFrame, "PHONE: " ,phoneFrame, woPhoneFrame, "DROWSY: " ,drowsyFrame, awakeFrame)
-        if (distPx_RI2L < distPx_RI2E or distPx_LI2L < distPx_LI2E) and (distPx_RI2L < 250 or distPx_LI2L < 250):
-            smokeFrame += 1
-            woSmokeFrame = 0
-            if smokeFrame > 20:
-                smokeCount += 1
-                smokeFrame = 0
-        else:
-            woSmokeFrame += 1
-
-        # WITHOUT SMOKE FRAME IS BIGGER THAN LIMIT DRIVER IS NOT TALKING
-        if woSmokeFrame > 80:
+    #SMOKE DETECT
+    if (distPx_IFT2L < distPx_IFT2RE or distPx_IFT2L < distPx_IFT2LE) and (distPx_IFT2L < distPx_LIL2LOL):
+        smokeFrame += 1
+        woSmokeFrame = 0
+        if smokeFrame > 20:
+            smokeCount += 1
             smokeFrame = 0
-            smokeCount = 0
-            writeOnceSmoke = 0
+    else:
+        woSmokeFrame += 1
 
-        if smokeCount > 2:
-            roiSmoke = img[-size - 150:-150, -size - 10:-10]
-            roiSmoke[np.where(smokeIconMask)] = 0
-            roiSmoke += smokeIcon
-            if writeOnceSmoke == 0:
-                writeOnceSmoke = 1
-                fileName = "smokeBreach_" + str(timeStamp)
-                filePath = "breachs/smoke/" + fileName + ".jpg"
-                cv2.imwrite(filePath, img)
-                breachtext = "Smoke Breach!"
-                log = 'breachs/breachs.txt'
-                logfile = open(log, "a")
-                with open(log, 'a') as logfile:
-                    logfile.write(logTimeStamp+ " " + breachtext + '\n')
+    # WITHOUT SMOKE FRAME IS BIGGER THAN LIMIT DRIVER IS NOT TALKING
+    if woSmokeFrame > 80:
+        smokeFrame = 0
+        smokeCount = 0
+        writeOnceSmoke = 0
+
+    if smokeCount > 2:
+        roiSmoke = img[-size - 150:-150, -size - 10:-10]
+        roiSmoke[np.where(smokeIconMask)] = 0
+        roiSmoke += smokeIcon
+        if writeOnceSmoke == 0:
+            writeOnceSmoke = 1
+            fileName = "smokeBreach_" + str(timeStamp)
+            filePath = "breachs/smoke/" + fileName + ".jpg"
+            cv2.imwrite(filePath, img)
+            breachtext = "Smoke Breach!"
+            log = 'breachs/breachs.txt'
+            logfile = open(log, "a")
+            with open(log, 'a') as logfile:
+                logfile.write(logTimeStamp+ " " + breachtext + '\n')
+
+    #PHONE DETECT
+    if ((0 < distPx_IFT2RE < distPx_IFT2L) and distPx_IFT2RE < distPx_LIL2LOL) or (
+            (0 < distPx_IFT2LE < distPx_LIL2LOL) and distPx_IFT2LE < distPx_IFT2L):
+        phoneFrame += 1
+        woPhoneFrame = 0
+        if phoneFrame > 20:
+            phoneCount += 1
+            phoneFrame = 0
+    else:
+        woPhoneFrame += 1
+    # print(distPx_RI2E, distPx_LI2E, distPx_LE2RE, "   " ,phoneFrame, woPhoneFrame)
+
+    # WITHOUT PHONE FRAME IS BIGGER THAN LIMIT DRIVER IS NOT TALKING
+    if woPhoneFrame > 80:
+        phoneFrame = 0
+        phoneCount = 0
+        writeOncePhone = 0
+    if phoneCount > 2:
+        roiPhone = img[-size - 260:-260, -size - 10:-10]
+        roiPhone[np.where(phoneIconMask)] = 0
+        roiPhone += phoneIcon
+        if writeOncePhone == 0:
+            writeOncePhone = 1
+            fileName = "phoneBreach_" + str(timeStamp)
+            filePath = "breachs/phone/" + fileName + ".jpg"
+            cv2.imwrite(filePath, img)
+            breachtext = "Phone Breach!"
+            log = 'breachs/breachs.txt'
+            logfile = open(log, "a")
+            with open(log, 'a') as logfile:
+                logfile.write(logTimeStamp + " " + breachtext + '\n')
 
 
+    # print(round(distPx_IFT2L,2), round(distPx_IFT2RE,2), round(distPx_IFT2LE,2), round(distPx_LIL2LOL,2), "SMOKE: ", smokeFrame, woSmokeFrame, "PHONE: ",
+    #       phoneFrame, woPhoneFrame)
+    print("SMOKE: ", smokeFrame, woSmokeFrame, " PHONE:", phoneFrame, woPhoneFrame, " DROWSY:", drowsyFrame, " AWAKE:", awakeFrame)
     cTime = time.time()
     fps = 1 / (cTime - startTime)
     startTime = cTime

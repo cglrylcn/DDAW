@@ -10,8 +10,8 @@ mpFaceMesh = mp.solutions.face_mesh
 faceMesh = mpFaceMesh.FaceMesh()
 drawSpec = mpDraw.DrawingSpec(thickness=1, circle_radius=1)
 mpPose = mp.solutions.pose
-Pose = mpPose.Pose(min_detection_confidence=0.7,
-               min_tracking_confidence=0.7)
+Pose = mpPose.Pose(min_detection_confidence=0.6,
+               min_tracking_confidence=0.6)
 mpHand = mp.solutions.hands
 Hand = mpHand.Hands()
 
@@ -105,6 +105,10 @@ smokeFrame = 0
 smokeCount = 0
 woSmokeFrame = 0
 
+distractedFrame = 0
+attentiveFrame = 0
+distractedCount = 0
+
 distPx_IFT2L = 0
 distPx_IFT2RE = 0
 distPx_IFT2LE = 0
@@ -158,15 +162,12 @@ while cap.isOpened():
 
         distPx_LIL2LOL = dist2p(img, leftInnerLid, leftOuterLid) #Distance from left inner lid to left outerlid
 
-        # cv2.putText(img, str((leftLidRatio+rightLidRatio)/2), (0, 60), cv2.FONT_HERSHEY_PLAIN, 1, (255, 0, 255), 1)
-        # cv2.putText(img, 'Uyuyorsun', (40, 60), cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 255), 1)
-
         if 0 < lipRatio < 10 or (leftLidRatio + rightLidRatio) / 2 > 4:
             drowsyFrame += 1
-            awakeFrame = 0
             if drowsyFrame > 30:
                 drowsyCount += 1
                 drowsyFrame = 0
+                awakeFrame = 0
         else:
             awakeFrame += 1
 
@@ -182,39 +183,59 @@ while cap.isOpened():
             roiDrowsy[np.where(drowsyIconMask)] = 0
             roiDrowsy += drowsyIcon
 
-        # cv2.putText(img, f'Drowsiness Count: {int(drowsyCount)}', (20, 80), cv2.FONT_HERSHEY_PLAIN, 1, (255, 0, 0), 1)
-        # ATTENTION ICON ON SCREEN
-        # roiAttention = img[-size - 40:-40, -size - 10:-10]
-        # roiAttention[np.where(attentionIconMask)] = 0
-        # roiAttention += attentionIcon
-
     # POSE SHOW
     # mpDraw.draw_landmarks(img, poseResults.pose_landmarks, mpPose.POSE_CONNECTIONS,
     #                       mpDraw.DrawingSpec(color=(245, 117, 66), thickness=2, circle_radius=4),
     #                       mpDraw.DrawingSpec(color=(245, 66, 230), thickness=2, circle_radius=2))
 
-    # HAND SHOW
-    # if handResults.multi_hand_landmarks and faceMeshResults.multi_face_landmarks:
-    #     for i in range(0, 20):
-    #         pLms = handResults.multi_hand_landmarks[0].landmark[i]
-    #         x = int(pLms.x * width)
-    #         y = int(pLms.y * height)
-    #         cv2.circle(img, (x, y), 1, (100, 100, 0), -10)
-    #         cv2.putText(img, str(i), (x, y), cv2.FONT_HERSHEY_PLAIN, 2, (0, 255, 0), 2)
-
-
-
-    ##########################
-    if poseResults.pose_landmarks and faceMeshResults.multi_face_landmarks and handResults.multi_hand_landmarks:
-        # for i in range(0, 20):
+    if poseResults.pose_landmarks:
+        # for i in range(0, 32):
         #     pLms = poseResults.pose_landmarks.landmark[i]
         #     x = int(pLms.x * width)
         #     y = int(pLms.y * height)
         #     cv2.circle(img, (x, y), 1, (100, 100, 0), -10)
         #     cv2.putText(img, str(i), (x, y), cv2.FONT_HERSHEY_PLAIN, 2, (0, 255, 0), 2)
-        #     print(i, x, y)
 
+        nose = poseResults.pose_landmarks.landmark[0]
+        leftCheek = poseResults.pose_landmarks.landmark[7]
+        rightCheek = poseResults.pose_landmarks.landmark[8]
+        mouthLeft = poseResults.pose_landmarks.landmark[9]
+        mouthRight = poseResults.pose_landmarks.landmark[10]
+        distPx_ML2R = dist2p(img, mouthLeft, mouthRight)
+        distPx_N2LC = dist2p(img, nose, leftCheek)
+        distPx_N2RC = dist2p(img, nose, rightCheek)
+        nose_x, nose_y = point_xy(img, nose)
+        leftCheek_x, leftCheek_y = point_xy(img, leftCheek)
+        rightCheek_x, rightCheek_y = point_xy(img, rightCheek)
+        if distPx_N2LC < distPx_ML2R / 2 or distPx_N2RC < distPx_ML2R / 2 or rightCheek_x > nose_x or nose_x > leftCheek_x:
+            distractedFrame += 1
+            attentiveFrame = 0
+            if distractedFrame > 10:
+                distractedCount += 1
+                distractedFrame = 0
+        else: attentiveFrame += 1
 
+        if attentiveFrame > 80:
+            distractedFrame = 0
+            distractedCount = 0
+            writeOnceAttention = 0
+
+        if distractedCount > 2:
+            roiAttention = img[-size - 40:-40, -size - 10:-10]
+            roiAttention[np.where(attentionIconMask)] = 0
+            roiAttention += attentionIcon
+            if writeOnceAttention == 0:
+                writeOnceAttention = 1
+                fileName = "distractionBreach_" + str(timeStamp)
+                filePath = "breachs/distraction/" + fileName + ".jpg"
+                cv2.imwrite(filePath, img)
+                breachtext = "Distraction Breach!"
+                log = 'breachs/breachs.txt'
+                logfile = open(log, "a")
+                with open(log, 'a') as logfile:
+                    logfile.write(logTimeStamp + " " + breachtext + '\n')
+    ##########################
+    if poseResults.pose_landmarks and faceMeshResults.multi_face_landmarks and handResults.multi_hand_landmarks:
         # PHONE DETECTION
         rightEar = faceMeshResults.multi_face_landmarks[0].landmark[93]
         leftEar = faceMeshResults.multi_face_landmarks[0].landmark[323]
@@ -226,6 +247,7 @@ while cap.isOpened():
         bottomLip = faceMeshResults.multi_face_landmarks[0].landmark[14]
         leftIndex = poseResults.pose_landmarks.landmark[19]
         rightIndex = poseResults.pose_landmarks.landmark[20]
+
 
         distPx_RI2RE = dist2p(img, rightIndex, rightEar)
         distPx_LI2LE = dist2p(img, leftIndex, leftEar)
@@ -287,7 +309,6 @@ while cap.isOpened():
             phoneFrame = 0
     else:
         woPhoneFrame += 1
-    # print(distPx_RI2E, distPx_LI2E, distPx_LE2RE, "   " ,phoneFrame, woPhoneFrame)
 
     # WITHOUT PHONE FRAME IS BIGGER THAN LIMIT DRIVER IS NOT TALKING
     if woPhoneFrame > 80:
@@ -309,10 +330,8 @@ while cap.isOpened():
             with open(log, 'a') as logfile:
                 logfile.write(logTimeStamp + " " + breachtext + '\n')
 
-
-    # print(round(distPx_IFT2L,2), round(distPx_IFT2RE,2), round(distPx_IFT2LE,2), round(distPx_LIL2LOL,2), "SMOKE: ", smokeFrame, woSmokeFrame, "PHONE: ",
-    #       phoneFrame, woPhoneFrame)
-    print("SMOKE: ", smokeFrame, woSmokeFrame, " PHONE:", phoneFrame, woPhoneFrame, " DROWSY:", drowsyFrame, " AWAKE:", awakeFrame)
+    print("SMOKE: ", smokeFrame, woSmokeFrame, "  PHONE:", phoneFrame, woPhoneFrame,
+          "  DROWSY:", drowsyFrame, awakeFrame, "  DISTRACTION:", distractedFrame, attentiveFrame)
     cTime = time.time()
     fps = 1 / (cTime - startTime)
     startTime = cTime
